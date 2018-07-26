@@ -23,6 +23,10 @@
 #define DISPLAY_ILI9341V 0
 #endif
 
+#ifndef DISPLAY_GC9307
+#define DISPLAY_GC9307 0
+#endif
+
 #ifndef DISPLAY_ST7789V
 #define DISPLAY_ST7789V 1
 #endif
@@ -39,7 +43,7 @@
 
 static void __attribute__((unused)) display_sleep(void)
 {
-#if DISPLAY_ILI9341V || DISPLAY_ST7789V
+#if DISPLAY_ILI9341V || DISPLAY_GC9307 || DISPLAY_ST7789V
     CMD(0x28); // DISPOFF: Display Off
     CMD(0x10); // SLPIN: Sleep in
     HAL_Delay(5); // need to wait 5 milliseconds after "sleep in" before sending any new commands
@@ -48,7 +52,7 @@ static void __attribute__((unused)) display_sleep(void)
 
 static void display_unsleep(void)
 {
-#if DISPLAY_ILI9341V || DISPLAY_ST7789V
+#if DISPLAY_ILI9341V || DISPLAY_GC9307 || DISPLAY_ST7789V
     CMD(0x11); // SLPOUT: Sleep Out
     HAL_Delay(5); // need to wait 5 milliseconds after "sleep out" before sending any new commands
     CMD(0x29); // DISPON: Display On
@@ -63,7 +67,7 @@ static void display_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y
 {
     x0 += BUFFER_OFFSET.x; x1 += BUFFER_OFFSET.x;
     y0 += BUFFER_OFFSET.y; y1 += BUFFER_OFFSET.y;
-#if DISPLAY_ILI9341V || DISPLAY_ST7789V
+#if DISPLAY_ILI9341V || DISPLAY_GC9307 || DISPLAY_ST7789V
     CMD(0x2A); DATA(x0 >> 8); DATA(x0 & 0xFF); DATA(x1 >> 8); DATA(x1 & 0xFF); // column addr set
     CMD(0x2B); DATA(y0 >> 8); DATA(y0 & 0xFF); DATA(y1 >> 8); DATA(y1 & 0xFF); // row addr set
     CMD(0x2C);
@@ -72,12 +76,15 @@ static void display_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y
 
 void display_set_orientation(int degrees)
 {
-#if DISPLAY_ILI9341V || DISPLAY_ST7789V
+#if DISPLAY_ILI9341V || DISPLAY_GC9307 || DISPLAY_ST7789V
+    #define RGB (1 << 3)
     #define MV  (1 << 5)
     #define MX  (1 << 6)
     #define MY  (1 << 7)
-    // MADCTL: Memory Data Access Control
-    // reference section 9.3 in the ILI9341 manual; 8.12 in the ST7789V manual
+    // MADCTL: Memory Data Access Control - reference:
+    // section 9.3 in the ILI9341 manual
+    // section 6.2.18 in the GC9307 manual
+    // section 8.12 in the ST7789V manual
     char BX = 0, BY = 0;
     uint8_t display_command_parameter = 0;
     switch (degrees) {
@@ -96,6 +103,9 @@ void display_set_orientation(int degrees)
             BX = 1;
             break;
     }
+    #if DISPLAY_GC9307
+        display_command_parameter ^= RGB | MY;  // XOR RGB and MY settings
+    #endif
     CMD(0x36); DATA(display_command_parameter);
     display_set_window(0, 0, DISPLAY_RESX - 1, DISPLAY_RESY - 1); // reset the column and page extents
 #endif
@@ -247,6 +257,18 @@ void display_init(void)
     CMD(0xE0); DATA(0x0F); DATA(0x2F); DATA(0x2C); DATA(0x0B); DATA(0x0F); DATA(0x09); DATA(0x56); DATA(0xD9); DATA(0x4A); DATA(0x0B); DATA(0x14); DATA(0x05); DATA(0x0C); DATA(0x06); DATA(0x00);
     // gamma curve 2
     CMD(0xE1); DATA(0x00); DATA(0x10); DATA(0x13); DATA(0x04); DATA(0x10); DATA(0x06); DATA(0x25); DATA(0x26); DATA(0x3B); DATA(0x04); DATA(0x0B); DATA(0x0A); DATA(0x33); DATA(0x39); DATA(0x0F);
+#endif
+#if DISPLAY_GC9307
+    CMD(0x35); DATA(0x00); // TEON: Tearing Effect Line On; V-blanking only
+    CMD(0x3A); DATA(0x55); // COLMOD: Interface Pixel format; 65K color: 16-bit/pixel (RGB 5-6-5 bits input)
+    CMD(0xDF); DATA(0x5A); DATA(0x69); DATA(0x02); DATA(0x01); // CMD2EN: Commands in command table 2 can be executed when EXTC level is Low
+    CMD(0xE4); DATA(0x1D); DATA(0x0A); DATA(0x11); // GATECTRL: Gate Control; NL = 240 gate lines, first scan line is gate 80.; gate scan direction 319 -> 0
+    // the above config is the most important and definitely necessary
+    CMD(0xD0); DATA(0xA4); DATA(0xA1);              // PWCTRL1: Power Control 1
+    // gamma curve 1
+    // CMD(0xE0); DATA(0x70); DATA(0x2C); DATA(0x2E); DATA(0x15); DATA(0x10); DATA(0x09); DATA(0x48); DATA(0x33); DATA(0x53); DATA(0x0B); DATA(0x19); DATA(0x18); DATA(0x20); DATA(0x25);
+    // gamma curve 2
+    // CMD(0xE1); DATA(0x70); DATA(0x2C); DATA(0x2E); DATA(0x15); DATA(0x10); DATA(0x09); DATA(0x48); DATA(0x33); DATA(0x53); DATA(0x0B); DATA(0x19); DATA(0x18); DATA(0x20); DATA(0x25);
 #endif
 #if DISPLAY_ST7789V
     CMD(0x35); DATA(0x00); // TEON: Tearing Effect Line On; V-blanking only
